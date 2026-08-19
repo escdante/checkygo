@@ -51,6 +51,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error loading state: %v\n", err)
 		os.Exit(1)
 	}
+	// persist rollover if the day changed (LoadState may have reset Checked)
 	if err := SaveState(dataDir, state); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving state: %v\n", err)
 		os.Exit(1)

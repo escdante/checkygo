@@ -35,10 +35,46 @@ func RenderBoard(tasks []string, s State, w io.Writer) {
 	fmt.Fprintln(w)
 }
 
-// RenderVerboseBoard prints the board with log lines under each checked task
-// and free-form events below a separator.
+// buildStateFromEvents reconstructs a State from a day's event log.
+// The net-checked set is determined by the last check/uncheck per task.
+func buildStateFromEvents(events []Event) State {
+	type entry struct {
+		ts      string
+		checked bool
+	}
+	last := make(map[int]entry)
+	for _, e := range events {
+		if e.Task == nil {
+			continue
+		}
+		switch e.Type {
+		case EventCheck:
+			last[*e.Task] = entry{ts: e.Ts, checked: true}
+		case EventUncheck:
+			last[*e.Task] = entry{ts: e.Ts, checked: false}
+		}
+	}
+	s := State{Checked: make(map[string]string)}
+	for idx, ent := range last {
+		if ent.checked {
+			s.Checked[strconv.Itoa(idx)] = ent.ts
+		}
+	}
+	return s
+}
+
+// RenderVerboseBoard prints today's verbose board (label = "TODAY", date = now).
 func RenderVerboseBoard(tasks []string, s State, events []Event, w io.Writer) {
-	// Most recent check log per task index
+	renderDayBoard("TODAY", time.Now(), tasks, s, events, w)
+}
+
+// RenderYesterdayBoard prints the verbose board for a past day with the given label and date.
+func RenderYesterdayBoard(label string, date time.Time, tasks []string, events []Event, w io.Writer) {
+	s := buildStateFromEvents(events)
+	renderDayBoard(label, date, tasks, s, events, w)
+}
+
+func renderDayBoard(label string, date time.Time, tasks []string, s State, events []Event, w io.Writer) {
 	taskLogs := make(map[int]string)
 	for _, e := range events {
 		if e.Type == EventCheck && e.Task != nil {
@@ -48,10 +84,9 @@ func RenderVerboseBoard(tasks []string, s State, events []Event, w io.Writer) {
 
 	checked := len(s.Checked)
 	total := len(tasks)
-	now := time.Now()
 
-	fmt.Fprintf(w, "\n  TODAY  %s  %s  %s  %d/%d\n\n",
-		dim("·"), dim(now.Format("Mon 2 Jan")), dim("·"), checked, total)
+	fmt.Fprintf(w, "\n  %s  %s  %s  %s  %d/%d\n\n",
+		label, dim("·"), dim(date.Format("Mon 2 Jan")), dim("·"), checked, total)
 
 	for i, task := range tasks {
 		key := strconv.Itoa(i)

@@ -9,7 +9,9 @@ import (
 )
 
 type Config struct {
-	DayStartHour int `json:"day_start_hour"`
+	DayStartHour int    `json:"day_start_hour"`
+	ApiKey       string `json:"api_key,omitempty"`
+	ApiModel     string `json:"api_model,omitempty"`
 }
 
 // DataDir returns the data directory: T_DATA_DIR env var takes precedence,
@@ -69,6 +71,18 @@ func LoadTasks(dataDir string) ([]string, error) {
 		return nil, errors.New("no tasks configured — run `t tasks` to add your daily tasks")
 	}
 	return tasks, nil
+}
+
+// SaveConfig writes config.json with the current configuration.
+func SaveConfig(dataDir string, cfg Config) error {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dataDir, "config.json"), data, 0o644)
 }
 
 // saveTasks writes the task list to tasks.json. Used by runTasks after the

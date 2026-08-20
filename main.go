@@ -33,6 +33,13 @@ func main() {
 			}
 			return
 		case "config":
+			if len(args) >= 4 && args[1] == "set" {
+				if err := runConfigSet(cfg, dataDir, args[2], args[3]); err != nil {
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+					os.Exit(1)
+				}
+				return
+			}
 			runConfig(cfg, dataDir)
 			return
 		}
@@ -72,6 +79,16 @@ func main() {
 		}
 		RenderVerboseBoard(tasks, state, events, os.Stdout)
 
+	case "yesterday":
+		ydayKey := DayKey(time.Now().AddDate(0, 0, -1), cfg.DayStartHour)
+		ydayDate, _ := time.Parse("2006-01-02", ydayKey)
+		events, err := ReadEvents(dataDir, ydayKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading events: %v\n", err)
+			os.Exit(1)
+		}
+		RenderYesterdayBoard("YESTERDAY", ydayDate, tasks, events, os.Stdout)
+
 	case "history":
 		statuses, err := ComputeHistory(dataDir, len(tasks), 30)
 		if err != nil {
@@ -85,6 +102,29 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+
+	case "summary":
+		events, err := ReadEvents(dataDir, dayKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading events: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stdout, "  generating summary...")
+		summary, err := SummarizeDay(cfg, dataDir, dayKey, tasks, events)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stdout, "\n  %s\n\n", wordWrap(summary, 72))
+
+	case "week":
+		fmt.Fprintln(os.Stdout, "  generating weekly summary...")
+		summary, err := SummarizeWeek(cfg, dataDir, len(tasks))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stdout, "\n  %s\n\n", wordWrap(summary, 72))
 
 	default:
 		n, parseErr := strconv.Atoi(args[0])
@@ -200,5 +240,65 @@ func runTasks(dataDir string) error {
 
 // runConfig prints the current configuration to stdout.
 func runConfig(cfg Config, dataDir string) {
-	fmt.Printf("\n  day_start_hour  %d\n  data_dir        %s\n\n", cfg.DayStartHour, dataDir)
+	model := cfg.ApiModel
+	if model == "" {
+		model = defaultModel + " (default)"
+	}
+	hasKey := "not set"
+	if resolveApiKey(cfg) != "" {
+		hasKey = "set"
+	}
+	fmt.Printf("\n  day_start_hour  %d\n  data_dir        %s\n  api_key         %s\n  api_model       %s\n\n",
+		cfg.DayStartHour, dataDir, hasKey, model)
+}
+
+// runConfigSet updates a single config key.
+func runConfigSet(cfg Config, dataDir, key, value string) error {
+	switch key {
+	case "day_start_hour":
+		h, err := strconv.Atoi(value)
+		if err != nil || h < 0 || h > 23 {
+			return fmt.Errorf("day_start_hour must be 0–23")
+		}
+		cfg.DayStartHour = h
+	case "api_key":
+		cfg.ApiKey = value
+	case "api_model":
+		cfg.ApiModel = value
+	default:
+		return fmt.Errorf("unknown config key %q — valid keys: day_start_hour, api_key, api_model", key)
+	}
+	if err := SaveConfig(dataDir, cfg); err != nil {
+		return err
+	}
+	fmt.Printf("  %s = %s\n", key, value)
+	return nil
+}
+
+// wordWrap wraps text at word boundaries to fit within width characters per line,
+// indenting continuation lines to align with the first.
+func wordWrap(text string, width int) string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+	var sb strings.Builder
+	lineLen := 0
+	for i, w := range words {
+		if i == 0 {
+			sb.WriteString(w)
+			lineLen = len(w)
+			continue
+		}
+		if lineLen+1+len(w) > width {
+			sb.WriteString("\n  ")
+			sb.WriteString(w)
+			lineLen = len(w)
+		} else {
+			sb.WriteByte(' ')
+			sb.WriteString(w)
+			lineLen += 1 + len(w)
+		}
+	}
+	return sb.String()
 }

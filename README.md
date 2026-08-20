@@ -98,9 +98,13 @@ t history
 | `t <N>` | Check task N (1-based). Prompts for a one-line log. Already checked → asks to uncheck. |
 | `t log [text]` | Append a free-form note not tied to any task. Args joined; prompts inline if none. |
 | `t today` | Verbose board — log lines under each checked task, free notes at the bottom |
+| `t yesterday` | Same verbose board for the previous work day |
 | `t history` | 30-day completion grid: `■` all done · `▪` partial · `·` nothing |
+| `t summary` | AI-generated paragraph of today's work (cached; requires API key) |
+| `t week` | AI-generated paragraph summarizing the past 7 days (cached per ISO week) |
 | `t tasks` | Open `tasks.json` in `$EDITOR` to edit your recurring task list |
-| `t config` | Show current configuration (day start hour, data directory) |
+| `t config` | Show current configuration |
+| `t config set <key> <value>` | Update a config value without touching the JSON file |
 
 ### check flow
 
@@ -170,9 +174,11 @@ Everything is stored locally. No account, no sync, no cloud.
 | Path | Format | Contents |
 |------|--------|----------|
 | `{data_dir}/tasks.json` | JSON array | Your recurring daily task list |
-| `{data_dir}/config.json` | JSON object | Configuration (day start hour) |
+| `{data_dir}/config.json` | JSON object | Configuration (day start hour, API key, model) |
 | `{data_dir}/state.json` | JSON object | Today's check state (resets each day) |
 | `{data_dir}/logs/YYYY-MM-DD.jsonl` | JSONL | Append-only event log — one object per line |
+| `{data_dir}/logs/YYYY-MM-DD.summary.json` | JSON | Cached AI daily summary (event-count-keyed) |
+| `{data_dir}/logs/week-YYYY-WWW.summary.json` | JSON | Cached AI weekly summary (event-count-keyed) |
 
 **Default data directory:**
 
@@ -197,17 +203,37 @@ Three event types: `check`, `uncheck`, `free`.
 
 ## configuration
 
-Edit `config.json` in your data directory directly:
+Edit via CLI:
+
+```sh
+t config set day_start_hour 5
+t config set api_key sk-ant-...
+t config set api_model claude-haiku-4-5
+```
+
+Or edit `config.json` in your data directory directly:
 
 ```json
 {
-  "day_start_hour": 4
+  "day_start_hour": 4,
+  "api_key": "sk-ant-...",
+  "api_model": "claude-haiku-4-5"
 }
 ```
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `day_start_hour` | `4` | Hour your "day" starts. Work past midnight without losing the day. A 2am check counts as yesterday if your day starts at 4am. |
+| `api_key` | — | Anthropic API key for `t summary` / `t week`. Set `ANTHROPIC_API_KEY` env var as an alternative. |
+| `api_model` | `claude-haiku-4-5` | Model used for AI summaries. Any current Anthropic model ID works. |
+
+### AI summaries (`t summary`, `t week`)
+
+`t summary` reads today's JSONL log and sends it to the Anthropic API once. The result is cached in `logs/YYYY-MM-DD.summary.json` keyed on event count — subsequent calls are instant and free until you log more events.
+
+`t week` works the same way, cached per ISO week in `logs/week-YYYY-WWW.summary.json`.
+
+Neither command requires an account or persistent connection — just an API key. Your logs never leave your machine except for the single API call you explicitly trigger.
 
 ---
 
@@ -233,10 +259,10 @@ make cross    # build for Windows, macOS (Intel + ARM), Linux
 
 ## roadmap
 
-- [ ] `t summary` — AI-generated daily summary via your own API key (Claude / OpenAI). Reads today's JSONL, sends to API once, caches result keyed on log count so it never re-charges for the same day.
-- [ ] `t week` — weekly summary that consumes cached daily summaries, not raw logs.
-
-The log format is already structured for both — no schema changes when v2 ships.
+- [x] `t summary` — AI daily summary, cached by event count
+- [x] `t week` — 7-day summary, cached per ISO week
+- [x] `t yesterday` — verbose board for the previous work day
+- [x] `t config set` — edit config from the CLI
 
 ---
 

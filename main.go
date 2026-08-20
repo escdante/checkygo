@@ -248,8 +248,9 @@ func runConfig(cfg Config, dataDir string) {
 	if resolveApiKey(cfg) != "" {
 		hasKey = "set"
 	}
-	fmt.Printf("\n  day_start_hour  %d\n  data_dir        %s\n  api_key         %s\n  api_model       %s\n\n",
-		cfg.DayStartHour, dataDir, hasKey, model)
+	baseURL := resolveBaseURL(cfg)
+	fmt.Printf("\n  day_start_hour  %d\n  data_dir        %s\n  api_key         %s\n  api_model       %s\n  api_base_url    %s\n\n",
+		cfg.DayStartHour, dataDir, hasKey, model, baseURL)
 }
 
 // runConfigSet updates a single config key.
@@ -265,8 +266,10 @@ func runConfigSet(cfg Config, dataDir, key, value string) error {
 		cfg.ApiKey = value
 	case "api_model":
 		cfg.ApiModel = value
+	case "api_base_url":
+		cfg.ApiBaseURL = value
 	default:
-		return fmt.Errorf("unknown config key %q — valid keys: day_start_hour, api_key, api_model", key)
+		return fmt.Errorf("unknown config key %q — valid keys: day_start_hour, api_key, api_model, api_base_url", key)
 	}
 	if err := SaveConfig(dataDir, cfg); err != nil {
 		return err

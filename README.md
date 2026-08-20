@@ -21,9 +21,7 @@
 
 <!-- Screenshot placeholder — replace with a real terminal recording -->
 <div align="center">
-  <img src="docs/assets/demo.png" alt="checkygo board screenshot" width="600"/>
-  <br/>
-  <sub><i>screenshot coming soon</i></sub>
+  <img src="docs/assets/demo.gif" alt="checkygo terminal demo" width="600"/>
 </div>
 
 ---

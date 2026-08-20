@@ -14,7 +14,7 @@ import (
 )
 
 const defaultModel = "claude-haiku-4-5"
-const anthropicAPI = "https://api.anthropic.com/v1/messages"
+const anthropicBaseURL = "https://api.anthropic.com"
 
 type summaryCache struct {
 	EventCount int    `json:"event_count"`
@@ -54,7 +54,17 @@ func resolveApiKey(cfg Config) string {
 	if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
 		return k
 	}
+	if k := os.Getenv("T_API_KEY"); k != "" {
+		return k
+	}
 	return cfg.ApiKey
+}
+
+func resolveBaseURL(cfg Config) string {
+	if cfg.ApiBaseURL != "" {
+		return cfg.ApiBaseURL
+	}
+	return anthropicBaseURL
 }
 
 func resolveModel(cfg Config) string {
@@ -64,21 +74,42 @@ func resolveModel(cfg Config) string {
 	return defaultModel
 }
 
-func callClaude(apiKey, model, prompt string) (string, error) {
-	body, _ := json.Marshal(map[string]any{
-		"model":      model,
-		"max_tokens": 1024,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-	})
-	req, err := http.NewRequest("POST", anthropicAPI, bytes.NewReader(body))
+// callLLM sends a single-turn prompt to the configured API.
+// If baseURL is Anthropic, uses the Anthropic Messages format.
+// All other URLs (Groq, OpenRouter, local Ollama, etc.) use the
+// OpenAI-compatible /chat/completions format.
+func callLLM(apiKey, baseURL, model, prompt string) (string, error) {
+	isAnthropic := strings.Contains(baseURL, "anthropic.com")
+
+	var endpoint string
+	var body []byte
+	if isAnthropic {
+		endpoint = strings.TrimRight(baseURL, "/") + "/v1/messages"
+		body, _ = json.Marshal(map[string]any{
+			"model":      model,
+			"max_tokens": 1024,
+			"messages":   []map[string]string{{"role": "user", "content": prompt}},
+		})
+	} else {
+		endpoint = strings.TrimRight(baseURL, "/") + "/chat/completions"
+		body, _ = json.Marshal(map[string]any{
+			"model":      model,
+			"max_tokens": 1024,
+			"messages":   []map[string]string{{"role": "user", "content": prompt}},
+		})
+	}
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	if isAnthropic {
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	} else {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -89,18 +120,37 @@ func callClaude(apiKey, model, prompt string) (string, error) {
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(raw))
 	}
+
+	if isAnthropic {
+		var result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return "", err
+		}
+		if len(result.Content) == 0 {
+			return "", errors.New("empty response")
+		}
+		return strings.TrimSpace(result.Content[0].Text), nil
+	}
+
+	// OpenAI-compatible response
 	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return "", err
 	}
-	if len(result.Content) == 0 {
+	if len(result.Choices) == 0 {
 		return "", errors.New("empty response")
 	}
-	return strings.TrimSpace(result.Content[0].Text), nil
+	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }
 
 // SummarizeDay generates (or returns cached) a one-paragraph summary of today's work.
@@ -148,7 +198,8 @@ func SummarizeDay(cfg Config, dataDir, dayKey string, tasks []string, events []E
 	}
 
 	model := resolveModel(cfg)
-	summary, err := callClaude(apiKey, model, sb.String())
+	baseURL := resolveBaseURL(cfg)
+	summary, err := callLLM(apiKey, baseURL, model, sb.String())
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +260,8 @@ func SummarizeWeek(cfg Config, dataDir string, totalTasks int) (string, error) {
 	}
 
 	model := resolveModel(cfg)
-	summary, err := callClaude(apiKey, model, sb.String())
+	baseURL := resolveBaseURL(cfg)
+	summary, err := callLLM(apiKey, baseURL, model, sb.String())
 	if err != nil {
 		return "", err
 	}

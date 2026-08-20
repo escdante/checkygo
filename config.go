@@ -12,6 +12,7 @@ type Config struct {
 	DayStartHour int    `json:"day_start_hour"`
 	ApiKey       string `json:"api_key,omitempty"`
 	ApiModel     string `json:"api_model,omitempty"`
+	ApiBaseURL   string `json:"api_base_url,omitempty"`
 }
 
 // DataDir returns the data directory: T_DATA_DIR env var takes precedence,
